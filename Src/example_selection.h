@@ -13,7 +13,7 @@
 #ifndef TEST_SELECTION_
 #define TEST_SELECTION_
 
-#define TEST_READING_DEV_ID
+//#define TEST_READING_DEV_ID
 //#define TEST_SIMPLE_TX
 //#define TEST_SIMPLE_TX_PDOA
 //#define TEST_TX_SLEEP

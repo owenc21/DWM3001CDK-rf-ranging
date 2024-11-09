@@ -24,8 +24,6 @@
 #include <shared_defines.h>
 #include <shared_functions.h>
 
-#if defined(TEST_SS_TWR_RESPONDER)
-
 extern void test_run_info(unsigned char *data);
 
 /* Example application name */
@@ -210,7 +208,7 @@ int ss_twr_responder(void)
         }
     }
 }
-#endif
+
 /*****************************************************************************************************************************************************
  * NOTES:
  *
