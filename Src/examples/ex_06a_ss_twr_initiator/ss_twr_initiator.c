@@ -39,7 +39,7 @@
 
 /* Network configuration */
 #define DEVICE_ID 'I'
-#define NUM_DEVICES 1
+#define NUM_DEVICES 3
 
 /* Connectivity list */
 static double connectivity_list[NUM_DEVICES];
@@ -177,7 +177,7 @@ int ss_twr_initiator(void)
     {
         /* View connectivity list */
         for(int i=0; i<NUM_DEVICES; i++){
-            printf("| %3.2f ", connectivity_list[i]);
+            printf("| %3.3f M ", connectivity_list[i]);
         }
         printf("|\n");
 
@@ -190,10 +190,6 @@ int ss_twr_initiator(void)
         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
         dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0); /* Zero offset in TX buffer. */
         dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1);          /* Zero offset in TX buffer, ranging. */
-
-        /* We are sending to cur_dev, so update the poll and resp messages accordingly */
-        tx_poll_msg[DEST_DEV] = cur_dev;
-        rx_resp_msg[SRC_DEV] = cur_dev;
 
         /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
          * set by dwt_setrxaftertxdelay() has elapsed. */
