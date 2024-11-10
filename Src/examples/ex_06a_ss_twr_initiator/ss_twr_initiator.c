@@ -35,6 +35,9 @@ extern void test_run_info(unsigned char *data);
 #define DEVICE_ID 'I'
 #define NUM_DEVICES 1
 
+/* Connectivity list */
+static double connectivity_list[NUM_DEVICES];
+
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
     5,                /* Channel number. */
@@ -154,6 +157,11 @@ int ss_twr_initiator(void)
     /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
      * Note, in real low power applications the LEDs should not be used. */
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+
+    /* Initialize connectivity list */
+    for(int i=0; i<NUM_DEVICES; i++){
+        connectivity_list[i] = 0.0;
+    }
 
     /* Cur device to update in connectivity list */
     uint8_t cur_device = 0;
