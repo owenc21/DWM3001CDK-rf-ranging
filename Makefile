@@ -17,6 +17,11 @@ stream-debug-logs:
 	echo "Run this command to view debug logs: tail -f Output/debug-log.txt"
 	docker run --privileged -it -v /dev/bus/usb:/dev/bus/usb -v "$$(pwd)/Output":/project/Output uberi/qorvo-nrf52833-board /usr/local/JLink_Linux_V792n_x86_64/JLinkRTTLogger -Device NRF52833_XXAA -if SWD -Speed 4000 -RTTChannel 0 /project/Output/debug-log.txt
 
+# streams directly to terminal
+stream-rtt:
+	echo "Run this command to view debug logs: tail -f Output/debug-log.txt"
+	docker run --privileged -it -v /dev/bus/usb:/dev/bus/usb -v "$$(pwd)/Output":/project/Output uberi/qorvo-nrf52833-board /usr/local/JLink_Linux_V792n_x86_64/JLinkRTTLogger -Device NRF52833_XXAA -if SWD -Speed 4000 -RTTChannel 0 /dev/stdout
+
 # auto-detect the DWM3001CDK's UART and open a minicom terminal connected to that UART, communicating via USB and the on-board SEGGER J-Link
 serial-terminal:
 	DEVICE_FILE=$$(ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null | while read -r dev; do if udevadm info -a -n $$dev | grep -q 'ATTRS{idVendor}=="1915"' && udevadm info -a -n $$dev | grep -q 'ATTRS{idProduct}=="520f"'; then echo "$$dev"; break; fi; done); \
