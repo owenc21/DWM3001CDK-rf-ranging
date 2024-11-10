@@ -29,6 +29,9 @@ extern void test_run_info(unsigned char *data);
 /* Example application name */
 #define APP_NAME "SS TWR RESP v1.0"
 
+#define PRIMARY_DEV 'I'
+#define DEVICE_ID 0
+
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
     5,                /* Channel number. */
@@ -51,8 +54,8 @@ static dwt_config_t config = {
 #define RX_ANT_DLY 16385
 
 /* Frames used in the ranging process. See NOTE 3 below. */
-static uint8_t rx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0xE0, 0, 0 };
-static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', 'A', 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t rx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, PRIMARY_DEV, DEVICE_ID, 0, 0, 0xE0, 0, 0 };
+static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DEVICE_ID, PRIMARY_DEV, 0, 0, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Index to access some of the fields in the frames involved in the process. */
@@ -240,8 +243,9 @@ int ss_twr_responder(void)
  *     - byte 0/1: frame control (0x8841 to indicate a data frame using 16-bit addressing).
  *     - byte 2: sequence number, incremented for each new frame.
  *     - byte 3/4: PAN ID (0xDECA).
- *     - byte 5/6: destination address, see NOTE 4 below.
- *     - byte 7/8: source address, see NOTE 4 below.
+ *     - byte 5: source address
+ *     - byte 6: destination address
+ *     - byte 7/8: UNUSED (previously used for 16-bit device addressing).
  *     - byte 9: function code (specific values to indicate which message it is in the ranging process).
  *    The remaining bytes are specific to each message as follows:
  *    Poll message:
@@ -250,9 +254,7 @@ int ss_twr_responder(void)
  *     - byte 10 -> 13: poll message reception timestamp.
  *     - byte 14 -> 17: response message transmission timestamp.
  *    All messages end with a 2-byte checksum automatically set by DW IC.
- * 4. Source and destination addresses are hard coded constants in this example to keep it simple but for a real product every device should have a
- *    unique ID. Here, 16-bit addressing is used to keep the messages as short as possible but, in an actual application, this should be done only
- *    after an exchange of specific messages used to define those short addresses for each device participating to the ranging exchange.
+ * 4. <No longer relevant>
  * 5. In a real application, for optimum performance within regulatory limits, it may be necessary to set TX pulse bandwidth and TX power, (using
  *    the dwt_configuretxrf API call) to per device calibrated values saved in the target system or the DW IC OTP memory.
  * 6. We use polled mode of operation here to keep the example as simple as possible but all status events can be used to generate interrupts. Please
