@@ -25,14 +25,16 @@
 #include <port.h>
 #include <shared_defines.h>
 #include <shared_functions.h>
+#include <stdio.h>
 
 extern void test_run_info(unsigned char *data);
 
-/* Example application name */
-#define APP_NAME "SS TWR INIT v1.0"
+/* Application name */
+#define APP_NAME "SS TWR N-DEV INIT"
 
+/* Network configuration */
 #define DEVICE_ID 'I'
-#define SRC_DEV 0
+#define NUM_DEVICES 1
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -59,8 +61,8 @@ static dwt_config_t config = {
 #define RX_ANT_DLY 16385
 
 /* Frames used in the ranging process. See NOTE 3 below. */
-static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DEVICE_ID, SRC_DEV, 0, 0, 0xE0, 0, 0 };
-static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, SRC_DEV, DEVICE_ID, 0, 0, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DEVICE_ID, 0, 0, 0, 0xE0, 0, 0 };
+static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 1, DEVICE_ID, 0, 0, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
@@ -68,6 +70,8 @@ static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, SRC_DEV, DEVICE_ID, 
 #define RESP_MSG_POLL_RX_TS_IDX 10
 #define RESP_MSG_RESP_TX_TS_IDX 14
 #define RESP_MSG_TS_LEN         4
+#define SRC_DEV 5
+#define DEST_DEV 6
 /* Frame sequence number, incremented after each transmission. */
 static uint8_t frame_seq_nb = 0;
 
@@ -105,7 +109,7 @@ int ss_twr_initiator(void)
 {
 
     /* Display application name on LCD. */
-    test_run_info((unsigned char *)APP_NAME);
+    printf("%s\n", APP_NAME);
 
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
     port_set_dw_ic_spi_fastrate();
@@ -121,7 +125,7 @@ int ss_twr_initiator(void)
     while (!dwt_checkidlerc()) /* Need to make sure DW IC is in IDLE_RC before proceeding */ { };
     if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
     {
-        test_run_info((unsigned char *)"INIT FAILED     ");
+        printf("INIT FAILED\n");
         while (1) { };
     }
 
@@ -132,7 +136,7 @@ int ss_twr_initiator(void)
     /* if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device */
     if (dwt_configure(&config))
     {
-        test_run_info((unsigned char *)"CONFIG FAILED     ");
+        printf("CONFIG FAILED\n");
         while (1) { };
     }
 
@@ -212,7 +216,6 @@ int ss_twr_initiator(void)
                     distance = tof * SPEED_OF_LIGHT;
                     /* Display computed distance on LCD. */
                     snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
-                    test_run_info((unsigned char *)dist_str);
                 }
             }
         }

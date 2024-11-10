@@ -26,8 +26,8 @@
 
 extern void test_run_info(unsigned char *data);
 
-/* Example application name */
-#define APP_NAME "SS TWR RESP v1.0"
+/* Application Name */
+#define APP_NAME "SS TWR N-DEV RESP"
 
 #define PRIMARY_DEV 'I'
 #define DEVICE_ID 0
@@ -97,7 +97,7 @@ extern dwt_txconfig_t txconfig_options;
 int ss_twr_responder(void)
 {
     /* Display application name on LCD. */
-    test_run_info((unsigned char *)APP_NAME);
+    printf("%s\n", APP_NAME);
 
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
     port_set_dw_ic_spi_fastrate();
@@ -113,7 +113,7 @@ int ss_twr_responder(void)
     while (!dwt_checkidlerc()) /* Need to make sure DW IC is in IDLE_RC before proceeding */ { };
     if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
     {
-        test_run_info((unsigned char *)"INIT FAILED     ");
+        printf("INIT FAILED\n");
         while (1) { };
     }
 
@@ -124,7 +124,7 @@ int ss_twr_responder(void)
     /* if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device */
     if (dwt_configure(&config))
     {
-        test_run_info((unsigned char *)"CONFIG FAILED     ");
+        printf("CONFIG FAILED\n");
         while (1) { };
     }
 
@@ -163,6 +163,7 @@ int ss_twr_responder(void)
 
                 /* Check that the frame is a poll sent by "SS TWR initiator" example.
                  * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
+                /* See note 14*/
                 rx_buffer[ALL_MSG_SN_IDX] = 0;
                 if (memcmp(rx_buffer, rx_poll_msg, ALL_MSG_COMMON_LEN) == 0)
                 {
@@ -284,4 +285,6 @@ int ss_twr_responder(void)
  *     thereafter.
  * 13. Desired configuration by user may be different to the current programmed configuration. dwt_configure is called to set desired
  *     configuration.
+ * 14. In checking that the response message is as expected, this will ensure that we only respond when the initatior sends a polling message whose
+ *     destination address is the same as our device ID
  ****************************************************************************************************************************************************/
