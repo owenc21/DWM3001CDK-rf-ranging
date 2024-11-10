@@ -17,6 +17,13 @@
  * @author Decawave
  */
 
+/**
+ * This is a modification of ss_twr_initiator.c, as provided by Decawave, to support building a connectivity matrix in a networks with N nodes
+ * (including initiator)
+ * 
+ * This device will act as the initiator to record distance between itself and the other N-1 devices in the network
+ */
+
 #include "deca_probe_interface.h"
 #include <config_options.h>
 #include <deca_device_api.h>
@@ -173,9 +180,10 @@ int ss_twr_initiator(void)
         }
         printf("|\n");
 
-        /* Update the poll and resp messages according to cur_device */
+        /* Update the poll and resp messages according to cur_device. See NOTE 14 below. */
         tx_poll_msg[DEST_IDX] = cur_device;
         rx_resp_msg[SRC_IDX] = cur_device;
+
         /* Write frame data to DW IC and prepare transmission. See NOTE 7 below. */
         tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
@@ -236,7 +244,7 @@ int ss_twr_initiator(void)
 
                     /* Update connectivity list */
                     connectivity_list[cur_device] = distance;
-                    /* Once we've recorded distance for this device, go to next */
+                    /* Only move on to next device after successfully recording distance */
                     cur_device = (cur_device + 1) % NUM_DEVICES;
                 }
             }
@@ -319,4 +327,6 @@ int ss_twr_initiator(void)
  *     thereafter.
  * 13. Desired configuration by user may be different to the current programmed configuration. dwt_configure is called to set desired
  *     configuration.
+ * 14. We take turns asking devices for responses to record distances. As such, each iteration, we update the destination of the polling message and
+ *      the (expected) source of the respone message to the device we want to receive distance from
  ****************************************************************************************************************************************************/
