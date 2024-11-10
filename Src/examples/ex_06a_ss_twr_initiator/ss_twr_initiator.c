@@ -17,6 +17,13 @@
  * @author Decawave
  */
 
+/**
+ * This is a modification of ss_twr_initiator.c, as provided by Decawave, to support building a connectivity matrix in a networks with N nodes
+ * (including initiator)
+ * 
+ * This device will act as the initiator to record distance between itself and the other N-1 devices in the network
+ */
+
 #include "deca_probe_interface.h"
 #include <config_options.h>
 #include <deca_device_api.h>
@@ -27,17 +34,15 @@
 #include <shared_functions.h>
 #include <stdio.h>
 
-extern void test_run_info(unsigned char *data);
-
-/* Application name */
+/* Example application name */
 #define APP_NAME "SS TWR N-DEV INIT"
 
 /* Network configuration */
 #define DEVICE_ID 'I'
 #define NUM_DEVICES 1
 
-/* Connectivity List */
-static double connect_list[NUM_DEVICES];
+/* Connectivity list */
+static double connectivity_list[NUM_DEVICES];
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -65,7 +70,7 @@ static dwt_config_t config = {
 
 /* Frames used in the ranging process. See NOTE 3 below. */
 static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DEVICE_ID, 0, 0, 0, 0xE0, 0, 0 };
-static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 1, DEVICE_ID, 0, 0, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0, DEVICE_ID, 0, 0, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
@@ -73,8 +78,8 @@ static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 1, DEVICE_ID, 0, 0, 
 #define RESP_MSG_POLL_RX_TS_IDX 10
 #define RESP_MSG_RESP_TX_TS_IDX 14
 #define RESP_MSG_TS_LEN         4
-#define SRC_DEV 5
-#define DEST_DEV 6
+#define SRC_IDX 5
+#define DEST_IDX 6
 /* Frame sequence number, incremented after each transmission. */
 static uint8_t frame_seq_nb = 0;
 
@@ -159,20 +164,26 @@ int ss_twr_initiator(void)
      * Note, in real low power applications the LEDs should not be used. */
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
-    /* Initialize the connectivity list */
+    /* Initialize connectivity list */
     for(int i=0; i<NUM_DEVICES; i++){
-        connect_list[i] = 0.0;
+        connectivity_list[i] = 0.0;
     }
 
-    uint8_t cur_dev = 0;
+    /* Cur device to update in connectivity list */
+    uint8_t cur_device = 0;
+
     /* Loop forever initiating ranging exchanges. */
     while (1)
     {
-        /* Print out the distance matrix */
+        /* View connectivity list */
         for(int i=0; i<NUM_DEVICES; i++){
-            printf("| %3.2f M ");
+            printf("| %3.2f ", connectivity_list[i]);
         }
         printf("|\n");
+
+        /* Update the poll and resp messages according to cur_device. See NOTE 14 below. */
+        tx_poll_msg[DEST_IDX] = cur_device;
+        rx_resp_msg[SRC_IDX] = cur_device;
 
         /* Write frame data to DW IC and prepare transmission. See NOTE 7 below. */
         tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
@@ -234,12 +245,12 @@ int ss_twr_initiator(void)
                     tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
                     distance = tof * SPEED_OF_LIGHT;
                     /* Display computed distance on LCD. */
-                    snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
+                    printf("DIST: %3.2f m", distance);
 
-                    connect_list[cur_dev] = distance;
-
-                    /* At this point, we have the distance for device cur_dev, so increment */
-                    cur_dev = (cur_dev + 1) % NUM_DEVICES;
+                    /* Update connectivity list */
+                    connectivity_list[cur_device] = distance;
+                    /* Only move on to next device after successfully recording distance */
+                    cur_device = (cur_device + 1) % NUM_DEVICES;
                 }
             }
         }
@@ -321,5 +332,6 @@ int ss_twr_initiator(void)
  *     thereafter.
  * 13. Desired configuration by user may be different to the current programmed configuration. dwt_configure is called to set desired
  *     configuration.
- * 
+ * 14. We take turns asking devices for responses to record distances. As such, each iteration, we update the destination of the polling message and
+ *      the (expected) source of the respone message to the device we want to receive distance from
  ****************************************************************************************************************************************************/

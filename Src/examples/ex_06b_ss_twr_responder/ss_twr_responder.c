@@ -16,6 +16,14 @@
  *
  * @author Decawave
  */
+
+/**
+ * This is a modification of ss_twr_responder.c, as provided by Decawave, to support building a connectivity matrix in a networks with N nodes
+ * (including initiator)
+ * 
+ * This device will act as one of the responders, so that the initiator may estimate the distance between itself and this node
+ */
+
 #include "deca_probe_interface.h"
 #include <deca_device_api.h>
 #include <deca_spi.h>
@@ -29,8 +37,9 @@ extern void test_run_info(unsigned char *data);
 /* Application Name */
 #define APP_NAME "SS TWR N-DEV RESP"
 
+/* Network configuration */
 #define PRIMARY_DEV 'I'
-#define DEVICE_ID 0
+#define DEVICE_ID 0 // UNIQUE: SET FOR EACH DEVICE AHEAD OF TIME
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -165,6 +174,7 @@ int ss_twr_responder(void)
                  * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
                 /* See note 14*/
                 rx_buffer[ALL_MSG_SN_IDX] = 0;
+                /* Ensures we only respond at proper time (See NOTE 14 below) */
                 if (memcmp(rx_buffer, rx_poll_msg, ALL_MSG_COMMON_LEN) == 0)
                 {
                     uint32_t resp_tx_time;
@@ -285,6 +295,6 @@ int ss_twr_responder(void)
  *     thereafter.
  * 13. Desired configuration by user may be different to the current programmed configuration. dwt_configure is called to set desired
  *     configuration.
- * 14. In checking that the response message is as expected, this will ensure that we only respond when the initatior sends a polling message whose
- *     destination address is the same as our device ID
+ * 14. By checking that the recieved polling message is exactly as configured, this ensures the destination address of the polling message is
+ *     set to DEVICE_ID, so we only respond when the initator is looking for our distance
  ****************************************************************************************************************************************************/
