@@ -169,6 +169,12 @@ int ss_twr_initiator(void)
     /* Loop forever initiating ranging exchanges. */
     while (1)
     {
+        /* View connectivity list */
+        for(int i=0; i<NUM_DEVICES; i++){
+            printf("| %3.2f ", connectivity_list[i]);
+        }
+        printf("|\n");
+
         /* Update the poll and resp messages according to cur_device */
         tx_poll_msg[DEST_IDX] = cur_device;
         rx_resp_msg[SRC_IDX] = cur_device;
@@ -231,6 +237,8 @@ int ss_twr_initiator(void)
                     snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
                     test_run_info((unsigned char *)dist_str);
 
+                    /* Update connectivity list */
+                    connectivity_list[cur_device] = distance;
                     /* Once we've recorded distance for this device, go to next */
                     cur_device = (cur_device + 1) % NUM_DEVICES;
                 }
