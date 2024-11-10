@@ -36,6 +36,9 @@ extern void test_run_info(unsigned char *data);
 #define DEVICE_ID 'I'
 #define NUM_DEVICES 1
 
+/* Connectivity List */
+static double connect_list[NUM_DEVICES];
+
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
     5,                /* Channel number. */
@@ -156,14 +159,30 @@ int ss_twr_initiator(void)
      * Note, in real low power applications the LEDs should not be used. */
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
+    /* Initialize the connectivity list */
+    for(int i=0; i<NUM_DEVICES; i++){
+        connect_list[i] = 0.0;
+    }
+
+    uint8_t cur_dev = 0;
     /* Loop forever initiating ranging exchanges. */
     while (1)
     {
+        /* Print out the distance matrix */
+        for(int i=0; i<NUM_DEVICES; i++){
+            printf("| %3.2f M ");
+        }
+        printf("|\n");
+
         /* Write frame data to DW IC and prepare transmission. See NOTE 7 below. */
         tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
         dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0); /* Zero offset in TX buffer. */
         dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1);          /* Zero offset in TX buffer, ranging. */
+
+        /* We are sending to cur_dev, so update the poll and resp messages accordingly */
+        tx_poll_msg[DEST_DEV] = cur_dev;
+        rx_resp_msg[SRC_DEV] = cur_dev;
 
         /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
          * set by dwt_setrxaftertxdelay() has elapsed. */
@@ -216,6 +235,11 @@ int ss_twr_initiator(void)
                     distance = tof * SPEED_OF_LIGHT;
                     /* Display computed distance on LCD. */
                     snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
+
+                    connect_list[cur_dev] = distance;
+
+                    /* At this point, we have the distance for device cur_dev, so increment */
+                    cur_dev = (cur_dev + 1) % NUM_DEVICES;
                 }
             }
         }
@@ -297,4 +321,5 @@ int ss_twr_initiator(void)
  *     thereafter.
  * 13. Desired configuration by user may be different to the current programmed configuration. dwt_configure is called to set desired
  *     configuration.
+ * 
  ****************************************************************************************************************************************************/
