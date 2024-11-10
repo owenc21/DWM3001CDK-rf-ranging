@@ -29,10 +29,11 @@
 extern void test_run_info(unsigned char *data);
 
 /* Example application name */
-#define APP_NAME "SS TWR INIT v1.0"
+#define APP_NAME "SS TWR N-DEV INIT"
 
+/* Network configuration */
 #define DEVICE_ID 'I'
-#define SRC_DEV 0
+#define NUM_DEVICES 1
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -59,8 +60,8 @@ static dwt_config_t config = {
 #define RX_ANT_DLY 16385
 
 /* Frames used in the ranging process. See NOTE 3 below. */
-static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DEVICE_ID, SRC_DEV, 0, 0, 0xE0, 0, 0 };
-static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, SRC_DEV, DEVICE_ID, 0, 0, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, DEVICE_ID, 0, 0, 0, 0xE0, 0, 0 };
+static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 0, DEVICE_ID, 0, 0, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Indexes to access some of the fields in the frames defined above. */
@@ -68,6 +69,8 @@ static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, SRC_DEV, DEVICE_ID, 
 #define RESP_MSG_POLL_RX_TS_IDX 10
 #define RESP_MSG_RESP_TX_TS_IDX 14
 #define RESP_MSG_TS_LEN         4
+#define SRC_IDX 5
+#define DEST_IDX 6
 /* Frame sequence number, incremented after each transmission. */
 static uint8_t frame_seq_nb = 0;
 
@@ -152,9 +155,15 @@ int ss_twr_initiator(void)
      * Note, in real low power applications the LEDs should not be used. */
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
+    /* Cur device to update in connectivity list */
+    uint8_t cur_device = 0;
+
     /* Loop forever initiating ranging exchanges. */
     while (1)
     {
+        /* Update the poll and resp messages according to cur_device */
+        tx_poll_msg[DEST_IDX] = cur_device;
+        rx_resp_msg[SRC_IDX] = cur_device;
         /* Write frame data to DW IC and prepare transmission. See NOTE 7 below. */
         tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
@@ -213,6 +222,9 @@ int ss_twr_initiator(void)
                     /* Display computed distance on LCD. */
                     snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
                     test_run_info((unsigned char *)dist_str);
+
+                    /* Once we've recorded distance for this device, go to next */
+                    cur_device = (cur_device + 1) % NUM_DEVICES;
                 }
             }
         }

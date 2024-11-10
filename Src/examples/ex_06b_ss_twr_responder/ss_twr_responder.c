@@ -27,8 +27,9 @@
 extern void test_run_info(unsigned char *data);
 
 /* Example application name */
-#define APP_NAME "SS TWR RESP v1.0"
+#define APP_NAME "SS TWR N-DEV RESP"
 
+/* Network configuration */
 #define PRIMARY_DEV 'I'
 #define DEVICE_ID 0
 
