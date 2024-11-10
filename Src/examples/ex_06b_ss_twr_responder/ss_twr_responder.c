@@ -98,7 +98,7 @@ extern dwt_txconfig_t txconfig_options;
 int ss_twr_responder(void)
 {
     /* Display application name on LCD. */
-    test_run_info((unsigned char *)APP_NAME);
+    printf("%s\n", APP_NAME);
 
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
     port_set_dw_ic_spi_fastrate();
@@ -114,7 +114,7 @@ int ss_twr_responder(void)
     while (!dwt_checkidlerc()) /* Need to make sure DW IC is in IDLE_RC before proceeding */ { };
     if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
     {
-        test_run_info((unsigned char *)"INIT FAILED     ");
+        printf("INIT FAILED\n");
         while (1) { };
     }
 
@@ -125,7 +125,7 @@ int ss_twr_responder(void)
     /* if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device */
     if (dwt_configure(&config))
     {
-        test_run_info((unsigned char *)"CONFIG FAILED     ");
+        printf("CONFIG FAILED\n");
         while (1) { };
     }
 
