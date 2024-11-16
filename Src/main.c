@@ -55,8 +55,10 @@ Purpose : DWM3001C build main entry point for simple exmaples.
 #include <stdlib.h>
 #include <assert.h>
 
-extern int ss_twr_responder(void);
-extern int ss_twr_initiator(void);
+//extern int ss_twr_responder(void);
+//extern int ss_twr_initiator(void);
+
+extern int dist_matrix(void);
 
 int main(void)
 {
@@ -78,6 +80,7 @@ int main(void)
     // UNCOMMENT EXACTLY ONE OF THE BELOW PROGRAMS
     // ss_twr_responder();
     // ss_twr_initiator();
+    dist_matrix();
 
     while (1) {}
 }
