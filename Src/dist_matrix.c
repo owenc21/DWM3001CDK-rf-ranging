@@ -22,7 +22,7 @@
 #define APP_NAME "SS TWR DIST CONN MAT"
 
 /* Network configuration */
-#define DEVICE_ID 1
+#define DEVICE_ID 0
 #define NUM_DEVICES 2
 #define SET_INIT_DEV (DEVICE_ID + 1) % NUM_DEVICES
 
@@ -70,7 +70,7 @@ typedef struct  message_payload{
     uint8_t poll_msg[12];
     uint8_t resp_msg[20];
     double connectivity_matrix[NUM_DEVICES][NUM_DEVICES];
-    uint8_t padding[4]; // padding..?
+    uint8_t crc[2]; // TODO: confirm this is necessary due to transmision cutting off last 2 bytes
 } message_payload;
 
 /**
@@ -172,6 +172,34 @@ void update_matrix(){
  * Finishes by sending connectivity matrix along with initiatior start message to next device
  */
 void initiator(){
+    printf("DEBUG: Enter initiator\n");
+    /* Configure the TX spectrum parameters (power, PG delay and PG count) */
+    /* Reset and initialize DW chip. */
+    reset_DWIC(); /* Target specific drive of RSTn line into DW3000 low for a period. */
+
+    Sleep(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
+
+    /* Probe for the correct device driver. */
+    dwt_probe((struct dwt_probe_s *)&dw3000_probe_interf);
+
+    while (!dwt_checkidlerc()) /* Need to make sure DW IC is in IDLE_RC before proceeding */ { };
+    if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
+    {
+        printf("INIT FAILED\n");
+        while (1) { };
+    }
+
+    /* Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards. */
+    dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+
+    /* Configure DW IC. See NOTE 13 below. */
+    /* if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device */
+    if (dwt_configure(&config))
+    {
+        printf("CONFIG FAILED\n");
+        while (1) { };
+    }
+
     /* Configure the TX spectrum parameters (power, PG delay and PG count) */
     dwt_configuretxrf(&txconfig_options);
 
@@ -226,6 +254,7 @@ void initiator(){
 
         /* We assume that the transmission is achieved correctly, poll for reception of a frame or error/timeout. */
         waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR), 0);
+        printf("DEBUG: Get passed block\n");
 
         /* Increment frame sequence number after transmission of the poll message (modulo 256). */
         frame_seq_nb++;
@@ -309,8 +338,12 @@ void initiator(){
 
     /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
         * set by dwt_setrxaftertxdelay() has elapsed. */
-    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    dwt_starttx(DWT_START_TX_IMMEDIATE);
+    waitforsysstatus(NULL, NULL, DWT_INT_TXFRS_BIT_MASK, 0);
 
+    /* Clear TX frame sent event. */
+    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+    printf("DEBUG: Sent the distance matrix, exiting initatior\n");
     return;
 }
 
@@ -326,6 +359,32 @@ void responder(){
     tx.header.type = TYPE_RESPONSE;
     tx.header.src = DEVICE_ID;
 
+    /* Reset and initialize DW chip. */
+    reset_DWIC(); /* Target specific drive of RSTn line into DW3000 low for a period. */
+
+    Sleep(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
+
+    /* Probe for the correct device driver. */
+    dwt_probe((struct dwt_probe_s *)&dw3000_probe_interf);
+
+    while (!dwt_checkidlerc()) /* Need to make sure DW IC is in IDLE_RC before proceeding */ { };
+    if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
+    {
+        printf("INIT FAILED\n");
+        while (1) { };
+    }
+
+    /* Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards. */
+    dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+
+    /* Configure DW IC. See NOTE 13 below. */
+    /* if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device */
+    if (dwt_configure(&config))
+    {
+        printf("CONFIG FAILED\n");
+        while (1) { };
+    }
+
     /* Configure the TX spectrum parameters (power, PG delay and PG count) */
     dwt_configuretxrf(&txconfig_options);
 
@@ -339,6 +398,7 @@ void responder(){
 
     while (1)
     {
+        printf("DEBUG: Inside responder loop\n");
         /* Activate reception immediately. */
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
@@ -416,6 +476,7 @@ void responder(){
                         printf("\n");
                     }
                     initiator();
+                    return;
                 }
             }
         }
@@ -439,41 +500,15 @@ int dist_matrix(void){
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
     port_set_dw_ic_spi_fastrate();
 
-    /* Reset and initialize DW chip. */
-    reset_DWIC(); /* Target specific drive of RSTn line into DW3000 low for a period. */
-
-    Sleep(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
-
-    /* Probe for the correct device driver. */
-    dwt_probe((struct dwt_probe_s *)&dw3000_probe_interf);
-
-    while (!dwt_checkidlerc()) /* Need to make sure DW IC is in IDLE_RC before proceeding */ { };
-    if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
-    {
-        printf("INIT FAILED\n");
-        while (1) { };
-    }
-
-    /* Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards. */
-    dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
-
-    /* Configure DW IC. See NOTE 13 below. */
-    /* if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device */
-    if (dwt_configure(&config))
-    {
-        printf("CONFIG FAILED\n");
-        while (1) { };
-    }
-
-
-
     // Need initial device to be set to initiator manually, otherwise rest are receiever and await being set to initiator
     if(DEVICE_ID == 0)
     {
         initiator();
     }
 
-    responder();
-
+    while(1){
+        responder();
+    }
+    
     // we should never get here
 }
