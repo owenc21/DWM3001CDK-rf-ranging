@@ -147,6 +147,7 @@ extern dwt_txconfig_t txconfig_options;
  * Utility function to print the connectivity matrix
  */
 void print_matrix(){
+    printf("Connectivity matrix for device %d\n:", DEVICE_ID);
     for(int i=0; i<NUM_DEVICES; i++){
         for(int j=0; j<NUM_DEVICES; j++){
             printf("%3.3f M      ", connectivity_matrix[i][j]);
@@ -172,7 +173,6 @@ void update_matrix(){
  * Finishes by sending connectivity matrix along with initiatior start message to next device
  */
 void initiator(){
-    printf("DEBUG: Enter initiator\n");
     /* Configure the TX spectrum parameters (power, PG delay and PG count) */
     /* Reset and initialize DW chip. */
     reset_DWIC(); /* Target specific drive of RSTn line into DW3000 low for a period. */
@@ -254,7 +254,6 @@ void initiator(){
 
         /* We assume that the transmission is achieved correctly, poll for reception of a frame or error/timeout. */
         waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR), 0);
-        printf("DEBUG: Get passed block\n");
 
         /* Increment frame sequence number after transmission of the poll message (modulo 256). */
         frame_seq_nb++;
@@ -334,8 +333,6 @@ void initiator(){
     dwt_writetxdata(sizeof(tx), (uint8_t*) &tx, 0);
     dwt_writetxfctrl(sizeof(tx), 0, 1);
 
-    printf("DEBUG: sizeof(tx)=%d\n", sizeof(tx));
-
     /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
         * set by dwt_setrxaftertxdelay() has elapsed. */
     dwt_starttx(DWT_START_TX_IMMEDIATE);
@@ -343,7 +340,7 @@ void initiator(){
 
     /* Clear TX frame sent event. */
     dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
-    printf("DEBUG: Sent the distance matrix, exiting initatior\n");
+
     return;
 }
 
@@ -398,7 +395,6 @@ void responder(){
 
     while (1)
     {
-        printf("DEBUG: Inside responder loop\n");
         /* Activate reception immediately. */
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
@@ -414,7 +410,6 @@ void responder(){
 
             /* A frame has been received, read it into the local message response */
             frame_len = dwt_getframelength();
-            printf("DEBUG: frame_len: %d\n", frame_len);
             if (frame_len <= sizeof(message))
             {
                 message response;
@@ -468,13 +463,6 @@ void responder(){
                         }
                     }
 
-                    printf("DEBUG: response matrix\n");
-                    for(int i=0; i<NUM_DEVICES; i++){
-                        for(int j=0; j<NUM_DEVICES; j++){
-                            printf("%3.3f M      ", response.payload.connectivity_matrix[i][j]);
-                        }
-                        printf("\n");
-                    }
                     initiator();
                     return;
                 }
