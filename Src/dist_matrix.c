@@ -22,8 +22,8 @@
 #define APP_NAME "SS TWR DIST CONN MAT"
 
 /* Network configuration */
-#define DEVICE_ID 0
-#define NUM_DEVICES 4
+#define DEVICE_ID 1
+#define NUM_DEVICES 2
 #define SET_INIT_DEV (DEVICE_ID + 1) % NUM_DEVICES
 
 /* Connectivity components */
@@ -66,10 +66,11 @@ typedef struct message_header{
  * In the future, it would be ideal if we weren't sending such large packets since so much information
  * is being unused.
  */
-typedef struct message_payload{
+typedef struct  message_payload{
     uint8_t poll_msg[12];
     uint8_t resp_msg[20];
     double connectivity_matrix[NUM_DEVICES][NUM_DEVICES];
+    uint8_t padding[4]; // padding..?
 } message_payload;
 
 /**
@@ -171,6 +172,22 @@ void update_matrix(){
  * Finishes by sending connectivity matrix along with initiatior start message to next device
  */
 void initiator(){
+    /* Configure the TX spectrum parameters (power, PG delay and PG count) */
+    dwt_configuretxrf(&txconfig_options);
+
+    /* Apply default antenna delay value. See NOTE 2 below. */
+    dwt_setrxantennadelay(RX_ANT_DLY);
+    dwt_settxantennadelay(TX_ANT_DLY);
+
+    /* Set expected response's delay and timeout. See NOTE 1 and 5 below.
+     * As this example only handles one incoming frame with always the same delay and timeout, those values can be set here once for all. */
+    dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
+    dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
+
+    /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
+     * Note, in real low power applications the LEDs should not be used. */
+    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+
     // Start by printing out connectivity matrix (this will have been received unless this is first iter of device 0)
     print_matrix();
 
@@ -180,17 +197,19 @@ void initiator(){
     header.src = DEVICE_ID;
 
     message_payload payload;
-    payload.poll_msg = poll_msg;
-    payload.resp_msg = resp_msg;
     
     message tx;
     tx.header = header;
     tx.payload = payload;
 
-    for(uint8_t cur_device=0; cur_device<NUM_DEVICES; cur_device++)
+    uint8_t cur_device = 0;
+    while(cur_device < NUM_DEVICES)
     {
         /* Skip ourselves */
-        if(cur_device == DEVICE_ID) continue;
+        if(cur_device == DEVICE_ID){
+            cur_device++;
+            continue;
+        }
 
         /* Update destination to cur_device. */
         tx.header.dest = cur_device;
@@ -198,7 +217,7 @@ void initiator(){
         /* Write frame data to DW IC and prepare transmission  */
         tx.payload.poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
-        dwt_writetxdata(sizeof(tx), &tx, 0);
+        dwt_writetxdata(sizeof(tx), (uint8_t*) &tx, 0);
         dwt_writetxfctrl(sizeof(tx), 0, 1);
 
         /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
@@ -211,62 +230,59 @@ void initiator(){
         /* Increment frame sequence number after transmission of the poll message (modulo 256). */
         frame_seq_nb++;
 
-        /* Loop until we get the distance to cur_device */
-        while(1){
-            if (status_reg & DWT_INT_RXFCG_BIT_MASK)
-            {
-                uint16_t frame_len;
-                /* Clear good RX frame event in the DW IC status register. */
-                dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK);
+        if (status_reg & DWT_INT_RXFCG_BIT_MASK)
+        {
+            uint16_t frame_len;
+            /* Clear good RX frame event in the DW IC status register. */
+            dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK);
 
-                /* A frame has been received, read it into a response message. */
-                frame_len = dwt_getframelength();
-                if (frame_len <= sizeof(message))
+            /* A frame has been received, read it into a response message. */
+            frame_len = dwt_getframelength();
+            if (frame_len <= sizeof(message))
+            {
+                message response;
+                dwt_readrxdata((uint8_t*) &response, frame_len, 0);
+
+                /* Check that the response was a polling response and intended for us */
+                if (response.header.dest == DEVICE_ID && response.header.type == TYPE_RESPONSE)
                 {
-                    message response;
-                    dwt_readrxdata(&response, frame_len, 0);
+                    uint32_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
+                    int32_t rtd_init, rtd_resp;
+                    float clockOffsetRatio;
 
-                    /* Check that the response was a polling response and intended for us */
-                    if (response.header.dest == DEVICE_ID && response.header.type == TYPE_RESPONSE)
-                    {
-                        uint32_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
-                        int32_t rtd_init, rtd_resp;
-                        float clockOffsetRatio;
+                    /* Retrieve poll transmission and response reception timestamps */
+                    poll_tx_ts = dwt_readtxtimestamplo32();
+                    resp_rx_ts = dwt_readrxtimestamplo32();
 
-                        /* Retrieve poll transmission and response reception timestamps */
-                        poll_tx_ts = dwt_readtxtimestamplo32();
-                        resp_rx_ts = dwt_readrxtimestamplo32();
+                    /* Read carrier integrator value and calculate clock offset ratio. See NOTE 11 below. */
+                    clockOffsetRatio = ((float)dwt_readclockoffset()) / (uint32_t)(1 << 26);
 
-                        /* Read carrier integrator value and calculate clock offset ratio. See NOTE 11 below. */
-                        clockOffsetRatio = ((float)dwt_readclockoffset()) / (uint32_t)(1 << 26);
+                    /* Get timestamps embedded in response message. */
+                    resp_msg_get_ts(&response.payload.resp_msg[RESP_MSG_POLL_RX_TS_IDX], &poll_rx_ts);
+                    resp_msg_get_ts(&response.payload.resp_msg[RESP_MSG_RESP_TX_TS_IDX], &resp_tx_ts);
 
-                        /* Get timestamps embedded in response message. */
-                        resp_msg_get_ts(&response.payload.resp_msg[RESP_MSG_POLL_RX_TS_IDX], &poll_rx_ts);
-                        resp_msg_get_ts(&response.payload.resp_msg[RESP_MSG_RESP_TX_TS_IDX], &resp_tx_ts);
+                    /* Compute time of flight and distance, using clock offset ratio to correct for differing local and remote clock rates */
+                    rtd_init = resp_rx_ts - poll_tx_ts;
+                    rtd_resp = resp_tx_ts - poll_rx_ts;
 
-                        /* Compute time of flight and distance, using clock offset ratio to correct for differing local and remote clock rates */
-                        rtd_init = resp_rx_ts - poll_tx_ts;
-                        rtd_resp = resp_tx_ts - poll_rx_ts;
+                    tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
+                    distance = tof * SPEED_OF_LIGHT;
+                    /* Display computed distance on LCD. */
+                    printf("DIST: %3.2f m", distance);
 
-                        tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
-                        distance = tof * SPEED_OF_LIGHT;
-                        /* Display computed distance on LCD. */
-                        printf("DIST: %3.2f m", distance);
+                    /* Update connectivity list */
+                    connectivity_list[cur_device] = distance;
 
-                        /* Update connectivity list */
-                        connectivity_list[cur_device] = distance;
-
-                        /* We can break and move onto next device */
-                        break;
-                    }
+                    /* We can break and move onto next device */
+                    cur_device++;
                 }
+            }
 
-            }
-            else
-            {
-                /* Clear RX error/timeout events in the DW IC status register. */
-                dwt_writesysstatuslo(SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-            }
+        }
+        else
+        {
+            /* Clear RX error/timeout events in the DW IC status register. */
+            dwt_writesysstatuslo(SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
         }
 
         /* Execute a delay between ranging exchanges. */
@@ -279,12 +295,17 @@ void initiator(){
     /* Copy connectivity matrix to message and update dest to next initiator */
     tx.header.dest = SET_INIT_DEV;
     tx.header.type = TYPE_ITITIATOR;
-    memcpy(&tx.payload.connectivity_matrix[0][0], &connectivity_matrix[0][0], sizeof(connectivity_matrix));
-
+    for(int i=0; i<NUM_DEVICES; i++){
+        for(int j=0; j<NUM_DEVICES; j++){
+            memcpy(&tx.payload.connectivity_matrix[i][j], &connectivity_matrix[i][j], sizeof(double));
+        }
+    }
     /* Write frame data to DW IC and prepare transmission  */
     dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
-    dwt_writetxdata(sizeof(tx), &tx, 0);
+    dwt_writetxdata(sizeof(tx), (uint8_t*) &tx, 0);
     dwt_writetxfctrl(sizeof(tx), 0, 1);
+
+    printf("DEBUG: sizeof(tx)=%d\n", sizeof(tx));
 
     /* Start transmission, indicating that a response is expected so that reception is enabled automatically after the frame is sent and the delay
         * set by dwt_setrxaftertxdelay() has elapsed. */
@@ -305,6 +326,17 @@ void responder(){
     tx.header.type = TYPE_RESPONSE;
     tx.header.src = DEVICE_ID;
 
+    /* Configure the TX spectrum parameters (power, PG delay and PG count) */
+    dwt_configuretxrf(&txconfig_options);
+
+    /* Apply default antenna delay value. See NOTE 2 below. */
+    dwt_setrxantennadelay(RX_ANT_DLY);
+    dwt_settxantennadelay(TX_ANT_DLY);
+
+    /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
+     * Note, in real low power applications the LEDs should not be used. */
+    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+
     while (1)
     {
         /* Activate reception immediately. */
@@ -322,10 +354,11 @@ void responder(){
 
             /* A frame has been received, read it into the local message response */
             frame_len = dwt_getframelength();
+            printf("DEBUG: frame_len: %d\n", frame_len);
             if (frame_len <= sizeof(message))
             {
                 message response;
-                dwt_readrxdata(&response, frame_len, 0);
+                dwt_readrxdata((uint8_t*) &response, frame_len, 0);
 
                 if (response.header.dest == DEVICE_ID && response.header.type == TYPE_RANGING)
                 {
@@ -349,7 +382,8 @@ void responder(){
 
                     /* Write and send the response message. */
                     tx.payload.resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
-                    dwt_writetxdata(sizeof(tx), &tx, 0); /* Zero offset in TX buffer. */
+                    tx.header.dest = response.header.src;
+                    dwt_writetxdata(sizeof(tx), (uint8_t*) &tx, 0); /* Zero offset in TX buffer. */
                     dwt_writetxfctrl(sizeof(tx), 0, 1);          /* Zero offset in TX buffer, ranging. */
                     ret = dwt_starttx(DWT_START_TX_DELAYED);
 
@@ -368,7 +402,19 @@ void responder(){
                 }
                 else if(response.header.dest == DEVICE_ID && response.header.type == TYPE_ITITIATOR){
                     /* Copy distance matrix then become initiator */
-                    memcpy(&connectivity_matrix[0][0], &response.payload.connectivity_matrix[0][0], sizeof(connectivity_matrix));
+                    for(int i=0; i<NUM_DEVICES; i++){
+                        for(int j=0; j<NUM_DEVICES; j++){
+                            memcpy(&connectivity_matrix[i][j], &response.payload.connectivity_matrix[i][j], sizeof(double));
+                        }
+                    }
+
+                    printf("DEBUG: response matrix\n");
+                    for(int i=0; i<NUM_DEVICES; i++){
+                        for(int j=0; j<NUM_DEVICES; j++){
+                            printf("%3.3f M      ", response.payload.connectivity_matrix[i][j]);
+                        }
+                        printf("\n");
+                    }
                     initiator();
                 }
             }
@@ -419,16 +465,6 @@ int dist_matrix(void){
         while (1) { };
     }
 
-    /* Configure the TX spectrum parameters (power, PG delay and PG count) */
-    dwt_configuretxrf(&txconfig_options);
-
-    /* Apply default antenna delay value. See NOTE 2 below. */
-    dwt_setrxantennadelay(RX_ANT_DLY);
-    dwt_settxantennadelay(TX_ANT_DLY);
-
-    /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
-     * Note, in real low power applications the LEDs should not be used. */
-    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
 
     // Need initial device to be set to initiator manually, otherwise rest are receiever and await being set to initiator
@@ -436,13 +472,8 @@ int dist_matrix(void){
     {
         initiator();
     }
-    else
-    {
-        responder();
-    }
 
-    // should never get here
-    while(1){
-        
-    }
+    responder();
+
+    // we should never get here
 }
