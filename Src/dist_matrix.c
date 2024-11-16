@@ -147,7 +147,7 @@ extern dwt_txconfig_t txconfig_options;
  * Utility function to print the connectivity matrix
  */
 void print_matrix(){
-    printf("Connectivity matrix for device %d\n:", DEVICE_ID);
+    printf("\nConnectivity matrix for device %d:\n", DEVICE_ID);
     for(int i=0; i<NUM_DEVICES; i++){
         for(int j=0; j<NUM_DEVICES; j++){
             printf("%3.3f M      ", connectivity_matrix[i][j]);
@@ -296,7 +296,7 @@ void initiator(){
                     tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
                     distance = tof * SPEED_OF_LIGHT;
                     /* Display computed distance on LCD. */
-                    printf("DIST: %3.2f m", distance);
+                    // printf("DIST: %3.2f m", distance);
 
                     /* Update connectivity list */
                     connectivity_list[cur_device] = distance;
