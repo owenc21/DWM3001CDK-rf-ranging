@@ -65,6 +65,7 @@
         Name="Debug"
         c_user_include_directories=".;./Src/platform" />
       <file file_name="Src/main.c" />
+      <file file_name="Src/dist_matrix.c" />
       <folder Name="SEGGER">
         <file file_name="Src/SEGGER/SEGGER_RTT.c">
           <configuration Name="Debug" build_exclude_from_build="No" />
