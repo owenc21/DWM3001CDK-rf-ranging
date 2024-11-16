@@ -128,6 +128,10 @@ static uint32_t status_reg = 0;
 /* Receive response timeout. */
 #define RESP_RX_TIMEOUT_UUS 400
 
+/* Delay between frames, in UWB microseconds. */
+#define POLL_RX_TO_RESP_TX_DLY_UUS 650
+
+
 /* Hold copies of computed time of flight and distance here for reference so that it can be examined at a debug breakpoint. */
 static double tof;
 static double distance;
@@ -176,7 +180,6 @@ void initiator(){
     header.src = DEVICE_ID;
 
     message_payload payload;
-    payload.connectivity_matrix = NULL;
     payload.poll_msg = poll_msg;
     payload.resp_msg = resp_msg;
     
@@ -222,9 +225,6 @@ void initiator(){
                 {
                     message response;
                     dwt_readrxdata(&response, frame_len, 0);
-
-                    /* As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
-                    rx_buffer[ALL_MSG_SN_IDX] = 0;
 
                     /* Check that the response was a polling response and intended for us */
                     if (response.header.dest == DEVICE_ID && response.header.type == TYPE_RESPONSE)
@@ -278,6 +278,7 @@ void initiator(){
 
     /* Copy connectivity matrix to message and update dest to next initiator */
     tx.header.dest = SET_INIT_DEV;
+    tx.header.type = TYPE_ITITIATOR;
     memcpy(&tx.payload.connectivity_matrix[0][0], &connectivity_matrix[0][0], sizeof(connectivity_matrix));
 
     /* Write frame data to DW IC and prepare transmission  */
@@ -290,6 +291,94 @@ void initiator(){
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
     return;
+}
+
+
+/**
+ * @fn responder
+ * Waits for any messages sent to specific device
+ * If a polling message, responds appropriately
+ * If an initiation message, moves into initiation 
+ */
+void responder(){
+    message tx;
+    tx.header.type = TYPE_RESPONSE;
+    tx.header.src = DEVICE_ID;
+
+    while (1)
+    {
+        /* Activate reception immediately. */
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+        /* Poll for reception of a frame or error/timeout. */
+        waitforsysstatus(&status_reg, NULL, (DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR), 0);
+
+        if (status_reg & DWT_INT_RXFCG_BIT_MASK)
+        {
+            uint16_t frame_len;
+
+            /* Clear good RX frame event in the DW IC status register. */
+            dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK);
+
+            /* A frame has been received, read it into the local message response */
+            frame_len = dwt_getframelength();
+            if (frame_len <= sizeof(message))
+            {
+                message response;
+                dwt_readrxdata(&response, frame_len, 0);
+
+                if (response.header.dest == DEVICE_ID && response.header.type == TYPE_RANGING)
+                {
+                    uint32_t resp_tx_time;
+                    uint64_t poll_rx_ts, resp_tx_ts;
+                    int ret;
+
+                    /* Retrieve poll reception timestamp. */
+                    poll_rx_ts = get_rx_timestamp_u64();
+
+                    /* Compute response message transmission time. See NOTE 7 below. */
+                    resp_tx_time = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+                    dwt_setdelayedtrxtime(resp_tx_time);
+
+                    /* Response TX timestamp is the transmission time we programmed plus the antenna delay. */
+                    resp_tx_ts = (((uint64_t)(resp_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
+
+                    /* Write all timestamps in the final message. See NOTE 8 below. */
+                    resp_msg_set_ts(&tx.payload.resp_msg[RESP_MSG_POLL_RX_TS_IDX], poll_rx_ts);
+                    resp_msg_set_ts(&tx.payload.resp_msg[RESP_MSG_RESP_TX_TS_IDX], resp_tx_ts);
+
+                    /* Write and send the response message. */
+                    tx.payload.resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+                    dwt_writetxdata(sizeof(tx), &tx, 0); /* Zero offset in TX buffer. */
+                    dwt_writetxfctrl(sizeof(tx), 0, 1);          /* Zero offset in TX buffer, ranging. */
+                    ret = dwt_starttx(DWT_START_TX_DELAYED);
+
+                    /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 10 below. */
+                    if (ret == DWT_SUCCESS)
+                    {
+                        /* Poll DW IC until TX frame sent event set. See NOTE 6 below. */
+                        waitforsysstatus(NULL, NULL, DWT_INT_TXFRS_BIT_MASK, 0);
+
+                        /* Clear TXFRS event. */
+                        dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+
+                        /* Increment frame sequence number after transmission of the poll message (modulo 256). */
+                        frame_seq_nb++;
+                    }
+                }
+                else if(response.header.dest == DEVICE_ID && response.header.type == TYPE_ITITIATOR){
+                    /* Copy distance matrix then become initiator */
+                    memcpy(&connectivity_matrix[0][0], &response.payload.connectivity_matrix[0][0], sizeof(connectivity_matrix));
+                    initiator();
+                }
+            }
+        }
+        else
+        {
+            /* Clear RX error events in the DW IC status register. */
+            dwt_writesysstatuslo(SYS_STATUS_ALL_RX_ERR);
+        }
+    }
 }
 
 
@@ -343,11 +432,17 @@ int dist_matrix(void){
 
 
     // Need initial device to be set to initiator manually, otherwise rest are receiever and await being set to initiator
-    if device == 0:
-        do initiator
-    else:
-        do responder
+    if(DEVICE_ID == 0)
+    {
+        initiator();
+    }
+    else
+    {
+        responder();
+    }
 
-    while(1):
-        do responder
+    // should never get here
+    while(1){
+        
+    }
 }
